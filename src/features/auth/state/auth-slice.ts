@@ -15,16 +15,11 @@ import type {
   SignupRequest,
 } from "@/features/auth/types/auth";
 import { ApiError } from "@/lib/api/http-client";
-import {
-  clearStoredTokens,
-  setStoredTokens,
-} from "@/lib/utils/auth-storage";
 
 type AuthState = {
   status: AuthStatus;
   user: AuthUser | null;
   accessToken: string | null;
-  refreshToken: string | null;
   error: string | null;
 };
 
@@ -32,7 +27,6 @@ const initialState: AuthState = {
   status: "idle",
   user: null,
   accessToken: null,
-  refreshToken: null,
   error: null,
 };
 
@@ -55,21 +49,14 @@ function persistSession(state: AuthState, payload: AuthSessionResponse) {
   state.status = "authenticated";
   state.user = payload.user;
   state.accessToken = payload.accessToken;
-  state.refreshToken = payload.refreshToken;
   state.error = null;
-  setStoredTokens({
-    accessToken: payload.accessToken,
-    refreshToken: payload.refreshToken,
-  });
 }
 
 function clearSession(state: AuthState, error: string | null = null) {
   state.status = "anonymous";
   state.user = null;
   state.accessToken = null;
-  state.refreshToken = null;
   state.error = error;
-  clearStoredTokens();
 }
 
 export const login = createAsyncThunk<
@@ -98,31 +85,23 @@ export const signup = createAsyncThunk<
 
 export const rehydrateSession = createAsyncThunk<
   AuthSessionResponse,
-  string,
+  void,
   { rejectValue: AuthErrorPayload }
->("auth/rehydrateSession", async (refreshToken, { rejectWithValue }) => {
+>("auth/rehydrateSession", async (_, { rejectWithValue }) => {
   try {
-    return await authService.refresh({ refreshToken });
+    return await authService.refresh();
   } catch (error) {
     return rejectWithValue(normalizeError(error));
   }
 });
 
-export const logout = createAsyncThunk<void, void, { state: { auth: AuthState } }>(
-  "auth/logout",
-  async (_, { getState }) => {
-    const refreshToken = getState().auth.refreshToken;
-    if (!refreshToken) {
-      return;
-    }
-
-    try {
-      await authService.logout({ refreshToken });
-    } catch {
-      // Best-effort revocation. Local state is cleared regardless.
-    }
+export const logout = createAsyncThunk("auth/logout", async () => {
+  try {
+    await authService.logout();
+  } catch {
+    // Best-effort revocation. Local state is cleared regardless.
   }
-);
+});
 
 const authSlice = createSlice({
   name: "auth",
@@ -140,11 +119,9 @@ const authSlice = createSlice({
     },
     tokensRefreshed(
       state,
-      action: PayloadAction<{ accessToken: string; refreshToken: string }>
+      action: PayloadAction<{ accessToken: string }>
     ) {
       state.accessToken = action.payload.accessToken;
-      state.refreshToken = action.payload.refreshToken;
-      setStoredTokens(action.payload);
     },
     sessionRevoked(state) {
       clearSession(state);
@@ -183,8 +160,9 @@ const authSlice = createSlice({
       .addCase(rehydrateSession.fulfilled, (state, action) => {
         persistSession(state, action.payload);
       })
-      .addCase(rehydrateSession.rejected, (state, action) => {
-        clearSession(state, action.payload?.message ?? null);
+      .addCase(rehydrateSession.rejected, (state) => {
+        // No cookie / expired cookie on first paint isn't a user-facing error.
+        clearSession(state);
       })
       .addCase(logout.pending, (state) => {
         clearSession(state);

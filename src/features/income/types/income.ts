@@ -9,7 +9,24 @@ export type IncomeCategory = {
     | "SAVINGS"
     | "INVESTMENTS"
     | "ENTERTAINMENT"
-    | "OTHER";
+    | "Loans"
+    | "OTHER"
+    | "GROCERIES"
+    | "EMI_LOAN"
+    | "INSURANCE"
+    | "EDUCATION_KIDS"
+    | "CHILDCARE"
+    | "DINING_OUT"
+    | "SUBSCRIPTIONS"
+    | "SHOPPING"
+    | "TRAVEL"
+    | "HOBBIES"
+    | "PERSONAL_CARE"
+    | "SELF_DEVELOPMENT"
+    | "EMERGENCY_FUND"
+    | "RETIREMENT"
+    | "DEBT_PREPAYMENT"
+    | "GOAL_SAVINGS";
   name: string;
 };
 

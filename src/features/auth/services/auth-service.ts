@@ -2,8 +2,6 @@ import { apiRequest } from "@/lib/api/http-client";
 import type {
   AuthSessionResponse,
   LoginRequest,
-  LogoutRequest,
-  RefreshRequest,
   SignupRequest,
 } from "@/features/auth/types/auth";
 
@@ -22,17 +20,15 @@ export const authService = {
       skipAuthRefresh: true,
     });
   },
-  refresh(payload: RefreshRequest) {
+  refresh() {
     return apiRequest<AuthSessionResponse>("/auth/refresh", {
       method: "POST",
-      body: payload,
       skipAuthRefresh: true,
     });
   },
-  logout(payload: LogoutRequest) {
+  logout() {
     return apiRequest<void>("/auth/logout", {
       method: "POST",
-      body: payload,
       skipAuthRefresh: true,
     });
   },

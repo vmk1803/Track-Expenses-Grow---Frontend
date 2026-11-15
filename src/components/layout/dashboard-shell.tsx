@@ -7,10 +7,9 @@ import { useAppDispatch, useAppSelector } from "@/lib/store/hooks";
 import { cn } from "@/lib/utils/cn";
 
 const navItems = [
-  { href: "/dashboard/overview", label: "Overview" },
   { href: "/dashboard/expenses", label: "Expenses" },
   { href: "/dashboard/income", label: "Income" },
-  { href: "/dashboard/ai-advice", label: "AI Advice" },
+  { href: "/dashboard/personalization", label: "Personalization" },
 ];
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -55,7 +54,9 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
       <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-4 py-8 sm:px-6 lg:px-8">
         <nav className="flex flex-wrap gap-3">
           {navItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive =
+              pathname === item.href ||
+              pathname.startsWith(item.href + "/");
 
             return (
               <Link

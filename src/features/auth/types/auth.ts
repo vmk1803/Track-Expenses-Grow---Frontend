@@ -9,7 +9,6 @@ export type AuthUser = {
 
 export type AuthSessionResponse = {
   accessToken: string;
-  refreshToken: string;
   user: AuthUser;
 };
 
@@ -22,14 +21,6 @@ export type SignupRequest = {
   fullName: string;
   email: string;
   password: string;
-};
-
-export type RefreshRequest = {
-  refreshToken: string;
-};
-
-export type LogoutRequest = {
-  refreshToken: string;
 };
 
 export type AuthFormMode = "login" | "signup";

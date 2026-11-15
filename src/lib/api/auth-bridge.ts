@@ -1,23 +1,21 @@
-type RefreshedTokens = {
+type RefreshedSession = {
   accessToken: string;
-  refreshToken: string;
 };
 
 type AuthBridge = {
-  getRefreshToken: () => string | null;
-  refresh: (refreshToken: string) => Promise<RefreshedTokens>;
-  onTokensRefreshed: (tokens: RefreshedTokens) => void;
+  refresh: () => Promise<RefreshedSession>;
+  onTokensRefreshed: (session: RefreshedSession) => void;
   onRefreshFailure: () => void;
 };
 
 let bridge: AuthBridge | null = null;
-let inflight: Promise<RefreshedTokens | null> | null = null;
+let inflight: Promise<RefreshedSession | null> | null = null;
 
 export function registerAuthBridge(next: AuthBridge) {
   bridge = next;
 }
 
-export async function refreshAccessToken(): Promise<RefreshedTokens | null> {
+export async function refreshAccessToken(): Promise<RefreshedSession | null> {
   if (!bridge) {
     return null;
   }
@@ -27,16 +25,12 @@ export async function refreshAccessToken(): Promise<RefreshedTokens | null> {
   }
 
   const current = bridge;
-  const refreshToken = current.getRefreshToken();
-  if (!refreshToken) {
-    return null;
-  }
 
   inflight = (async () => {
     try {
-      const tokens = await current.refresh(refreshToken);
-      current.onTokensRefreshed(tokens);
-      return tokens;
+      const session = await current.refresh();
+      current.onTokensRefreshed(session);
+      return session;
     } catch (error) {
       current.onRefreshFailure();
       throw error;

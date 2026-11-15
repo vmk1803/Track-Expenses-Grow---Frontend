@@ -5,12 +5,21 @@ import { ApiError } from "@/lib/api/http-client";
 import { useAppSelector } from "@/lib/store/hooks";
 import { cn } from "@/lib/utils/cn";
 import { incomeService } from "@/features/income/services/income-service";
+import { recurringService } from "@/features/recurring/services/recurring-service";
 import type {
   IncomeAllocation,
   IncomeCategory,
   IncomeCategoryCode,
   IncomeView,
 } from "@/features/income/types/income";
+import type { RecurringExpenseView } from "@/features/recurring/types/recurring";
+
+type RecurringDraft = {
+  description: string;
+  amount: string;
+};
+
+const defaultRecurringDraft: RecurringDraft = { description: "", amount: "" };
 
 type AllocationDraft = {
   category: string;
@@ -180,6 +189,147 @@ function SectionLabel({
   );
 }
 
+function RecurringSection({
+  category,
+  categoryLimit,
+  items,
+  isAddOpen,
+  draft,
+  error,
+  busy,
+  onOpen,
+  onCancel,
+  onDraftChange,
+  onSubmit,
+  onDelete,
+}: {
+  category: IncomeCategoryCode;
+  categoryLimit: number;
+  items: RecurringExpenseView[];
+  isAddOpen: boolean;
+  draft: RecurringDraft;
+  error: string | null;
+  busy: string | null;
+  onOpen: () => void;
+  onCancel: () => void;
+  onDraftChange: (draft: RecurringDraft) => void;
+  onSubmit: () => void;
+  onDelete: (id: string) => void;
+}) {
+  const total = items.reduce((sum, item) => sum + item.amount, 0);
+  const isOver = total > categoryLimit;
+  const isCreating = busy === `create:${category}`;
+
+  return (
+    <div className="lg:col-span-3 mt-2 border-t border-border/70 pt-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-copy-muted">
+            Recurring items
+          </p>
+          <p className={cn("mt-1 text-xs", isOver ? "text-rose-600" : "text-copy-muted")}>
+            {formatCurrency(total)} of {formatCurrency(categoryLimit)} fixed
+            {isOver ? " (over budget)" : ""}
+          </p>
+        </div>
+        {!isAddOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="inline-flex h-9 items-center rounded-xl border border-border bg-surface px-3 text-xs font-medium text-copy-muted transition hover:border-brand/40 hover:text-brand"
+          >
+            + Add recurring
+          </button>
+        ) : null}
+      </div>
+
+      {items.length > 0 ? (
+        <ul className="mt-3 space-y-2">
+          {items.map((item) => {
+            const isDeleting = busy === `delete:${item.id}`;
+            return (
+              <li
+                key={item.id}
+                className="flex items-center justify-between rounded-xl border border-border bg-surface px-3 py-2"
+              >
+                <div>
+                  <p className="text-sm font-medium text-foreground">{item.description}</p>
+                  <p className="text-xs text-copy-muted">Auto-added on the 1st of each month</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold text-foreground">
+                    {formatCurrency(item.amount)}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => onDelete(item.id)}
+                    className="text-xs text-rose-600 hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        !isAddOpen && (
+          <p className="mt-3 text-xs text-copy-muted">
+            No recurring items yet. Add fixed monthly spends like EMI or subscriptions.
+          </p>
+        )
+      )}
+
+      {isAddOpen ? (
+        <div className="mt-3 rounded-xl border border-dashed border-brand/35 bg-brand/5 px-3 py-3">
+          <div className="grid gap-2 sm:grid-cols-[1.4fr_0.8fr_auto]">
+            <input
+              type="text"
+              value={draft.description}
+              onChange={(event) =>
+                onDraftChange({ ...draft, description: event.target.value })
+              }
+              placeholder="e.g. House EMI"
+              className="h-10 rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+            />
+            <input
+              type="number"
+              min="1"
+              step="0.01"
+              value={draft.amount}
+              onChange={(event) =>
+                onDraftChange({ ...draft, amount: event.target.value })
+              }
+              placeholder="Amount"
+              className="h-10 rounded-xl border border-border bg-surface px-3 text-sm text-foreground outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
+            />
+            <div className="flex items-center gap-2 justify-self-end">
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={isCreating}
+                className="h-10 rounded-xl border border-border bg-surface px-3 text-xs font-medium text-copy-muted transition hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onSubmit}
+                disabled={isCreating}
+                className="h-10 rounded-xl bg-foreground px-3 text-xs font-semibold text-white transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isCreating ? "Saving..." : "Add"}
+              </button>
+            </div>
+          </div>
+          {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function IncomeScreen() {
   const accessToken = useAppSelector((state) => state.auth.accessToken);
   const [categories, setCategories] = useState<IncomeCategory[]>([]);
@@ -196,6 +346,11 @@ export function IncomeScreen() {
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<AllocationDraft>(defaultDraft);
   const [editErrors, setEditErrors] = useState<DraftErrors>({});
+  const [recurringList, setRecurringList] = useState<RecurringExpenseView[]>([]);
+  const [recurringAddCategory, setRecurringAddCategory] = useState<string | null>(null);
+  const [recurringDraft, setRecurringDraft] = useState<RecurringDraft>(defaultRecurringDraft);
+  const [recurringError, setRecurringError] = useState<string | null>(null);
+  const [recurringBusy, setRecurringBusy] = useState<string | null>(null);
 
   const loadIncomeData = useCallback(async () => {
     if (!accessToken) {
@@ -205,9 +360,10 @@ export function IncomeScreen() {
     setPageError(null);
 
     try {
-      const [categoriesResponse, incomeResponse] = await Promise.all([
+      const [categoriesResponse, incomeResponse, recurringResponse] = await Promise.all([
         incomeService.getIncomeCategories(accessToken),
         incomeService.listIncome(accessToken),
+        recurringService.listRecurring(accessToken),
       ]);
 
       const nextCategories = categoriesResponse.categories;
@@ -216,6 +372,7 @@ export function IncomeScreen() {
       setCategories(nextCategories);
       setActiveIncome(newestIncome);
       setTotalIncomeInput(newestIncome ? String(newestIncome.totalIncome) : "");
+      setRecurringList(recurringResponse.recurring);
     } catch (error) {
       setPageError(normalizeApiError(error));
     }
@@ -233,9 +390,10 @@ export function IncomeScreen() {
       setIsLoading(true);
 
       try {
-        const [categoriesResponse, incomeResponse] = await Promise.all([
+        const [categoriesResponse, incomeResponse, recurringResponse] = await Promise.all([
           incomeService.getIncomeCategories(token),
           incomeService.listIncome(token),
+          recurringService.listRecurring(token),
         ]);
 
         if (!isMounted) {
@@ -246,6 +404,7 @@ export function IncomeScreen() {
         setCategories(categoriesResponse.categories);
         setActiveIncome(newestIncome);
         setTotalIncomeInput(newestIncome ? String(newestIncome.totalIncome) : "");
+        setRecurringList(recurringResponse.recurring);
         setPageError(null);
       } catch (error) {
         if (isMounted) {
@@ -579,6 +738,77 @@ export function IncomeScreen() {
     }
   };
 
+  const openRecurringForm = (category: IncomeCategoryCode) => {
+    setRecurringAddCategory(category);
+    setRecurringDraft(defaultRecurringDraft);
+    setRecurringError(null);
+  };
+
+  const closeRecurringForm = () => {
+    setRecurringAddCategory(null);
+    setRecurringDraft(defaultRecurringDraft);
+    setRecurringError(null);
+  };
+
+  const handleSubmitRecurring = async (category: IncomeCategoryCode) => {
+    if (!accessToken) {
+      return;
+    }
+
+    const description = recurringDraft.description.trim();
+    const amount = parsePositiveAmount(recurringDraft.amount);
+
+    if (!description) {
+      setRecurringError("Enter a short name for this recurring item.");
+      return;
+    }
+    if (!amount) {
+      setRecurringError("Enter an amount greater than zero.");
+      return;
+    }
+
+    setRecurringBusy(`create:${category}`);
+    setRecurringError(null);
+
+    try {
+      const response = await recurringService.createRecurring(
+        { category, description, amount },
+        accessToken
+      );
+      setRecurringList((current) => [response.recurring, ...current]);
+      closeRecurringForm();
+    } catch (error) {
+      setRecurringError(normalizeApiError(error));
+    } finally {
+      setRecurringBusy(null);
+    }
+  };
+
+  const handleDeleteRecurring = async (recurringId: string) => {
+    if (!accessToken) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Delete this recurring item? Future months will stop auto-generating and past entries become editable manual expenses."
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setRecurringBusy(`delete:${recurringId}`);
+    setRecurringError(null);
+
+    try {
+      await recurringService.deleteRecurring(recurringId, accessToken);
+      setRecurringList((current) => current.filter((item) => item.id !== recurringId));
+    } catch (error) {
+      setRecurringError(normalizeApiError(error));
+    } finally {
+      setRecurringBusy(null);
+    }
+  };
+
   if (isLoading) {
     return (
       <section className="flex min-h-[60vh] items-center justify-center">
@@ -839,6 +1069,27 @@ export function IncomeScreen() {
                               }}
                             />
                           </div>
+
+                          <RecurringSection
+                            category={allocation.category}
+                            categoryLimit={allocation.limit}
+                            items={recurringList.filter(
+                              (item) => item.category === allocation.category
+                            )}
+                            isAddOpen={recurringAddCategory === allocation.category}
+                            draft={recurringDraft}
+                            error={recurringAddCategory === allocation.category ? recurringError : null}
+                            busy={recurringBusy}
+                            onOpen={() => openRecurringForm(allocation.category)}
+                            onCancel={closeRecurringForm}
+                            onDraftChange={setRecurringDraft}
+                            onSubmit={() => {
+                              void handleSubmitRecurring(allocation.category);
+                            }}
+                            onDelete={(id) => {
+                              void handleDeleteRecurring(id);
+                            }}
+                          />
                         </>
                       )}
                     </div>

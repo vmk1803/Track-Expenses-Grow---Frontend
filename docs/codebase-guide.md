@@ -47,7 +47,7 @@ This means the app already has the core application shell and one real feature m
 │   ├── app/
 │   │   ├── (app)/
 │   │   │   └── dashboard/
-│   │   │       ├── ai-advice/page.tsx
+│   │   │       ├── personalization/page.tsx
 │   │   │       ├── expenses/page.tsx
 │   │   │       ├── income/page.tsx
 │   │   │       ├── overview/page.tsx
@@ -135,7 +135,7 @@ Current dashboard routes:
 - `/dashboard/overview`
 - `/dashboard/expenses`
 - `/dashboard/income`
-- `/dashboard/ai-advice`
+- `/dashboard/personalization`
 
 At the moment:
 

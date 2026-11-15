@@ -3,19 +3,17 @@
 import { useEffect, useRef } from "react";
 import { authService } from "@/features/auth/services/auth-service";
 import {
-  markAnonymous,
   rehydrateSession,
   sessionRevoked,
-  setBootstrapping,
   tokensRefreshed,
 } from "@/features/auth/state/auth-slice";
+import { rehydrateProfile } from "@/features/personalization/state/personalization-slice";
+import { readStoredProfile } from "@/features/personalization/utils/personalization-storage";
 import { registerAuthBridge } from "@/lib/api/auth-bridge";
-import { useAppDispatch, useAppStore } from "@/lib/store/hooks";
-import { getStoredRefreshToken } from "@/lib/utils/auth-storage";
+import { useAppDispatch } from "@/lib/store/hooks";
 
 export function AuthBootstrapper() {
   const dispatch = useAppDispatch();
-  const store = useAppStore();
   const hasBootstrapped = useRef(false);
 
   useEffect(() => {
@@ -26,32 +24,21 @@ export function AuthBootstrapper() {
     hasBootstrapped.current = true;
 
     registerAuthBridge({
-      getRefreshToken: () => store.getState().auth.refreshToken,
-      refresh: async (refreshToken) => {
-        const session = await authService.refresh({ refreshToken });
-        return {
-          accessToken: session.accessToken,
-          refreshToken: session.refreshToken,
-        };
+      refresh: async () => {
+        const session = await authService.refresh();
+        return { accessToken: session.accessToken };
       },
-      onTokensRefreshed: (tokens) => {
-        dispatch(tokensRefreshed(tokens));
+      onTokensRefreshed: (session) => {
+        dispatch(tokensRefreshed(session));
       },
       onRefreshFailure: () => {
         dispatch(sessionRevoked());
       },
     });
 
-    const refreshToken = getStoredRefreshToken();
-
-    if (!refreshToken) {
-      dispatch(markAnonymous());
-      return;
-    }
-
-    dispatch(setBootstrapping());
-    void dispatch(rehydrateSession(refreshToken));
-  }, [dispatch, store]);
+    void dispatch(rehydrateSession());
+    dispatch(rehydrateProfile(readStoredProfile()));
+  }, [dispatch]);
 
   return null;
 }

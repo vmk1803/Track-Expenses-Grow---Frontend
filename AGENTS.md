@@ -28,13 +28,11 @@ Implemented today:
 - access + refresh token persistence in local storage
 - 15-minute access token with silent refresh via 30-day rotating refresh token
 - protected dashboard shell
-- placeholder routes for `Overview`, `Expenses`, and `AI Advice`
+- `Expenses` dashboard home: budget summary, category usage, paginated expense list (Overview was merged into it)
 - live `Income` feature with backend integration
 
 Not fully implemented yet:
 
-- expenses CRUD
-- live overview metrics
 - AI guidance workflows
 
 ## Stack
@@ -61,10 +59,9 @@ Not fully implemented yet:
 │   ├── app/
 │   │   ├── (app)/
 │   │   │   └── dashboard/
-│   │   │       ├── ai-advice/page.tsx
+│   │   │       ├── personalization/page.tsx
 │   │   │       ├── expenses/page.tsx
 │   │   │       ├── income/page.tsx
-│   │   │       ├── overview/page.tsx
 │   │   │       ├── layout.tsx
 │   │   │       └── page.tsx
 │   │   ├── globals.css
@@ -75,9 +72,11 @@ Not fully implemented yet:
 │   │   ├── layout/
 │   │   │   ├── dashboard-shell.tsx
 │   │   │   └── protected-route.tsx
-│   │   └── providers/
-│   │       ├── app-providers.tsx
-│   │       └── auth-bootstrapper.tsx
+│   │   ├── providers/
+│   │   │   ├── app-providers.tsx
+│   │   │   └── auth-bootstrapper.tsx
+│   │   └── ui/
+│   │       └── pagination.tsx
 │   ├── config/
 │   │   └── env.ts
 │   ├── features/
@@ -121,6 +120,7 @@ Preferred structure:
 - `types/`
 - `schemas/`
 - `state/` only if feature-level shared state is needed
+- `utils/` for feature-internal pure helpers (e.g. recommender logic, formatters)
 
 ### 3. Put shared app infrastructure in `components/`, `lib/`, and `config/`
 
@@ -141,7 +141,7 @@ Do not scatter raw `fetch()` calls through UI components. Create service files t
 - public entry point
 - resolves `next` query parameter
 - renders `AuthScreen`
-- defaults successful auth redirect to `/dashboard/overview`
+- defaults successful auth redirect to `/dashboard/expenses`
 
 ### Protected routes
 
@@ -154,10 +154,9 @@ All dashboard pages inherit auth protection automatically.
 
 ### Current dashboard routes
 
-- `/dashboard/overview`
 - `/dashboard/expenses`
 - `/dashboard/income`
-- `/dashboard/ai-advice`
+- `/dashboard/personalization`
 
 ## App Bootstrap And Session Flow
 
@@ -445,8 +444,6 @@ Income UI blocks:
 
 These routes are scaffolded but not yet fully domain-driven:
 
-- `Overview`
-- `Expenses`
 - `AI Advice`
 
 If expanding them, follow the same pattern used by `Income`.

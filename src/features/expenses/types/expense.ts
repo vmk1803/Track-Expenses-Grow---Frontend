@@ -20,6 +20,7 @@ export type ExpenseView = {
   description: string;
   amount: number;
   spentDate: string;
+  recurringId: string | null;
   createdAt: string;
   updatedAt: string;
 };

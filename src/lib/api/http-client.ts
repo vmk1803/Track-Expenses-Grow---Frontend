@@ -41,6 +41,7 @@ async function performRequest(
     },
     body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
+    credentials: "include",
   });
 }
 

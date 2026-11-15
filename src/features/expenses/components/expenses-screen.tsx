@@ -1,7 +1,21 @@
 "use client";
 
+import {
+  Dialog,
+  DialogBackdrop,
+  DialogPanel,
+  DialogTitle,
+} from "@headlessui/react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { ListboxSelect } from "@/components/ui/listbox-select";
+import { Pagination } from "@/components/ui/pagination";
 import { incomeService } from "@/features/income/services/income-service";
 import type {
   IncomeAllocationView,
@@ -45,6 +59,9 @@ const defaultDraft: ExpenseDraft = {
   spentDate: "",
 };
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
+const DEFAULT_PAGE_SIZE = 25;
+
 const currencyFormatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
@@ -65,8 +82,34 @@ function formatDate(value: string) {
   return displayDateFormatter.format(new Date(value));
 }
 
+const monthLabelFormatter = new Intl.DateTimeFormat("en-IN", {
+  month: "long",
+  year: "numeric",
+});
+
+function padTwo(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+// Local calendar date (not toISOString, which is UTC and can be a day behind).
 function getTodayDateInputValue() {
-  return new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  return `${now.getFullYear()}-${padTwo(now.getMonth() + 1)}-${padTwo(now.getDate())}`;
+}
+
+/** "2026-11-10" → "2026-11" */
+function toMonthKey(dateValue: string) {
+  return dateValue.slice(0, 7);
+}
+
+function getCurrentMonthKey() {
+  return toMonthKey(getTodayDateInputValue());
+}
+
+/** "2026-11" → "November 2026" */
+function formatMonthLabel(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return monthLabelFormatter.format(new Date(year, month - 1, 1));
 }
 
 function parsePositiveAmount(rawValue: string) {
@@ -98,6 +141,16 @@ function normalizeApiError(error: unknown) {
     title: "Unable to save expense",
     message: "Something went wrong while talking to the backend.",
   };
+}
+
+function fieldClass(hasError: boolean, sizing = "h-12") {
+  return cn(
+    "w-full rounded-2xl border bg-background px-4 text-sm text-foreground outline-none transition",
+    sizing,
+    hasError
+      ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
+      : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
+  );
 }
 
 function SectionLabel({
@@ -152,7 +205,7 @@ function IconButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-border bg-surface transition disabled:cursor-not-allowed disabled:opacity-60",
+        "inline-flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-surface transition disabled:cursor-not-allowed disabled:opacity-60",
         toneClass
       )}
     >
@@ -162,55 +215,10 @@ function IconButton({
 }
 
 function ActionIcons(props: {
-  editing?: boolean;
   busy?: boolean;
   onEdit?: () => void;
   onDelete?: () => void;
-  onCancel?: () => void;
-  onSave?: () => void;
 }) {
-  if (props.editing) {
-    return (
-      <div className="flex items-center gap-2">
-        <IconButton
-          title="Cancel edit"
-          onClick={() => props.onCancel?.()}
-          disabled={props.busy}
-        >
-          <svg
-            viewBox="0 0 20 20"
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          >
-            <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
-          </svg>
-        </IconButton>
-        <IconButton
-          title="Save expense"
-          tone="success"
-          onClick={() => props.onSave?.()}
-          disabled={props.busy}
-        >
-          <svg
-            viewBox="0 0 20 20"
-            className="h-4 w-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          >
-            <path
-              d="M4.5 10.5l3.2 3.2L15.5 6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </IconButton>
-      </div>
-    );
-  }
-
   return (
     <div className="flex items-center gap-2">
       <IconButton
@@ -325,23 +333,25 @@ function ConfirmDeleteModal({
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-[rgba(13,20,33,0.42)] px-4">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-expense-title"
-        className="w-full max-w-md rounded-[28px] border border-border bg-white p-6 shadow-[0_28px_80px_rgba(13,20,33,0.24)]"
-      >
+    <Dialog
+      open
+      onClose={() => {
+        if (!busy) {
+          onCancel();
+        }
+      }}
+      className="relative z-40"
+    >
+      <DialogBackdrop className="fixed inset-0 bg-[rgba(13,20,33,0.42)]" />
+      <div className="fixed inset-0 flex items-center justify-center p-4">
+        <DialogPanel className="w-full max-w-md rounded-[28px] border border-border bg-white p-6 shadow-[0_28px_80px_rgba(13,20,33,0.24)]">
         <div className="space-y-3">
           <p className="text-sm font-semibold uppercase tracking-[0.08em] text-rose-600">
             Confirm delete
           </p>
-          <h2
-            id="delete-expense-title"
-            className="text-2xl font-semibold text-foreground"
-          >
+          <DialogTitle className="text-2xl font-semibold text-foreground">
             Remove this expense entry?
-          </h2>
+          </DialogTitle>
           <p className="text-sm leading-6 text-copy-muted">
             Deleting <span className="font-medium text-foreground">{expense.description}</span>
             {" "}will immediately free up the spent amount in the{" "}
@@ -368,20 +378,203 @@ function ConfirmDeleteModal({
             {busy ? "Deleting..." : "Delete expense"}
           </button>
         </div>
+        </DialogPanel>
       </div>
-    </div>
+    </Dialog>
+  );
+}
+
+function ExpenseFormModal({
+  mode,
+  open,
+  draft,
+  errors,
+  busy,
+  categories,
+  minDate,
+  maxDate,
+  onChange,
+  onSubmit,
+  onClose,
+}: {
+  mode: "add" | "edit";
+  open: boolean;
+  draft: ExpenseDraft;
+  errors: DraftErrors;
+  busy: boolean;
+  categories: ExpenseCategory[];
+  minDate?: string;
+  maxDate?: string;
+  onChange: (patch: Partial<ExpenseDraft>) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onSubmit();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={() => {
+        if (!busy) {
+          onClose();
+        }
+      }}
+      className="relative z-40"
+    >
+      <DialogBackdrop className="fixed inset-0 bg-[rgba(13,20,33,0.42)]" />
+      <div className="fixed inset-0 overflow-y-auto">
+        <div className="flex min-h-full items-center justify-center p-4">
+          <DialogPanel className="w-full max-w-lg rounded-[28px] border border-border bg-white p-6 shadow-[0_28px_80px_rgba(13,20,33,0.24)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <DialogTitle className="text-2xl font-semibold text-foreground">
+                  {mode === "add" ? "Add expense" : "Edit expense"}
+                </DialogTitle>
+                <p className="mt-1 text-sm text-copy-muted">
+                  Only categories from your active income plan are available.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={busy}
+                aria-label="Close"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-copy-muted transition hover:bg-brand/8 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <path d="M5 5l10 10M15 5L5 15" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-5">
+              <div className="grid gap-5 sm:grid-cols-2">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-foreground">
+                    Amount
+                  </span>
+                  <input
+                    data-autofocus
+                    type="number"
+                    inputMode="decimal"
+                    min="1"
+                    step="0.01"
+                    value={draft.amount}
+                    onChange={(event) => onChange({ amount: event.target.value })}
+                    placeholder="Enter amount"
+                    className={fieldClass(Boolean(errors.amount))}
+                  />
+                  {errors.amount ? (
+                    <p className="text-sm text-rose-600">{errors.amount}</p>
+                  ) : null}
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-foreground">
+                    Spent date
+                  </span>
+                  <input
+                    type="date"
+                    min={minDate}
+                    max={maxDate}
+                    value={draft.spentDate}
+                    onChange={(event) =>
+                      onChange({ spentDate: event.target.value })
+                    }
+                    className={fieldClass(Boolean(errors.spentDate))}
+                  />
+                  {errors.spentDate ? (
+                    <p className="text-sm text-rose-600">{errors.spentDate}</p>
+                  ) : null}
+                </label>
+              </div>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-foreground">
+                  Category
+                </span>
+                <select
+                  value={draft.category}
+                  onChange={(event) => onChange({ category: event.target.value })}
+                  className={fieldClass(Boolean(errors.category))}
+                >
+                  <option value="">Select category</option>
+                  {categories.map((category) => (
+                    <option key={category.code} value={category.code}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+                {errors.category ? (
+                  <p className="text-sm text-rose-600">{errors.category}</p>
+                ) : null}
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-foreground">
+                  Description
+                </span>
+                <textarea
+                  rows={3}
+                  value={draft.description}
+                  onChange={(event) =>
+                    onChange({ description: event.target.value })
+                  }
+                  placeholder="Example: Grocery refill for the week"
+                  className={fieldClass(
+                    Boolean(errors.description),
+                    "resize-none py-3"
+                  )}
+                />
+                {errors.description ? (
+                  <p className="text-sm text-rose-600">{errors.description}</p>
+                ) : null}
+              </label>
+
+              <div className="flex flex-col-reverse gap-3 pt-1 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  disabled={busy}
+                  className="inline-flex h-11 items-center justify-center rounded-2xl border border-border bg-background px-4 text-sm font-medium text-foreground transition hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={busy}
+                  className="inline-flex h-11 items-center justify-center rounded-2xl bg-brand px-4 text-sm font-semibold text-white shadow-[0_16px_36px_rgba(0,120,97,0.24)] transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {busy ? "Saving..." : "Save expense"}
+                </button>
+              </div>
+            </form>
+          </DialogPanel>
+        </div>
+      </div>
+    </Dialog>
   );
 }
 
 function getBudgetErrorMessage(
   allocation: IncomeAllocationView,
   nextAmount: number,
-  currentSpent: number
+  currentSpent: number,
+  monthKey: string
 ) {
   const overBy = currentSpent + nextAmount - allocation.limit;
   return `${allocation.categoryName} only has ${formatCurrency(
     Math.max(allocation.limit - currentSpent, 0)
-  )} left. This entry exceeds the category limit by ${formatCurrency(overBy)}.`;
+  )} left for ${formatMonthLabel(monthKey)}. This entry exceeds the category limit by ${formatCurrency(overBy)}.`;
 }
 
 export function ExpensesScreen() {
@@ -408,6 +601,42 @@ export function ExpensesScreen() {
   const [editErrors, setEditErrors] = useState<DraftErrors>({});
   const [expensePendingDelete, setExpensePendingDelete] =
     useState<ExpenseView | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey);
+
+  const currentMonthKey = getCurrentMonthKey();
+  const isViewingCurrentMonth = selectedMonth === currentMonthKey;
+  const selectedMonthLabel = formatMonthLabel(selectedMonth);
+
+  // Current month plus every month that has at least one expense, newest first.
+  const monthOptions = useMemo(() => {
+    const keys = new Set([currentMonthKey]);
+    expenses.forEach((expense) => keys.add(toMonthKey(expense.spentDate)));
+
+    return [...keys]
+      .sort((left, right) => right.localeCompare(left))
+      .map((key) => ({ value: key, label: formatMonthLabel(key) }));
+  }, [expenses, currentMonthKey]);
+
+  const monthExpenses = useMemo(
+    () =>
+      expenses.filter(
+        (expense) => toMonthKey(expense.spentDate) === selectedMonth
+      ),
+    [expenses, selectedMonth]
+  );
+
+  // Clamp at derive time so deleting the last row of the last page falls back
+  // to the previous page without an extra effect.
+  const pageCount = Math.max(1, Math.ceil(monthExpenses.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+
+  const pagedExpenses = useMemo(
+    () =>
+      monthExpenses.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [monthExpenses, currentPage, pageSize]
+  );
 
   const resolveLoadError = useCallback((results: Array<PromiseSettledResult<unknown>>) => {
     const firstRejected = results.find(
@@ -523,6 +752,7 @@ export function ExpensesScreen() {
   }, [accessToken, resolveLoadError]);
 
   const currentIncome = activeIncome;
+  const isEditMode = editingExpenseId !== null;
 
   const allowedCategories = useMemo(() => {
     if (!currentIncome) {
@@ -537,12 +767,12 @@ export function ExpensesScreen() {
   }, [currentIncome, expenseCategories]);
 
   const spendByCategory = useMemo(() => {
-    return expenses.reduce<Record<string, number>>((accumulator, expense) => {
+    return monthExpenses.reduce<Record<string, number>>((accumulator, expense) => {
       accumulator[expense.category] =
         (accumulator[expense.category] ?? 0) + expense.amount;
       return accumulator;
     }, {});
-  }, [expenses]);
+  }, [monthExpenses]);
 
   const budgetStatuses = useMemo<ExpenseBudgetStatus[]>(() => {
     if (!currentIncome) {
@@ -563,8 +793,8 @@ export function ExpensesScreen() {
   }, [currentIncome, spendByCategory]);
 
   const totalSpent = useMemo(() => {
-    return expenses.reduce((sum, expense) => sum + expense.amount, 0);
-  }, [expenses]);
+    return monthExpenses.reduce((sum, expense) => sum + expense.amount, 0);
+  }, [monthExpenses]);
 
   const resetComposer = () => {
     setIsAdding(false);
@@ -581,12 +811,25 @@ export function ExpensesScreen() {
     setEditErrors({});
   };
 
+  const openAddModal = () => {
+    resetEditState();
+    setDraftErrors({});
+    setErrorNotice(null);
+    setNewDraft((current) => ({
+      ...current,
+      spentDate: current.spentDate || getTodayDateInputValue(),
+    }));
+    setIsAdding(true);
+  };
+
   const validateExpenseDraft = ({
     draft,
     expenseIdToIgnore,
+    allowPastMonths,
   }: {
     draft: ExpenseDraft;
     expenseIdToIgnore?: string | null;
+    allowPastMonths: boolean;
   }) => {
     const nextErrors: DraftErrors = {};
     const parsedAmount = parsePositiveAmount(draft.amount);
@@ -619,6 +862,12 @@ export function ExpensesScreen() {
       nextErrors.spentDate = "Choose the date when this expense was spent.";
     } else if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedSpentDate)) {
       nextErrors.spentDate = "Spent date must be in YYYY-MM-DD format.";
+    } else if (
+      !allowPastMonths &&
+      toMonthKey(trimmedSpentDate) !== getCurrentMonthKey()
+    ) {
+      nextErrors.spentDate =
+        "New expenses can only be added to the current month.";
     }
 
     const allocation = currentIncome.allocations.find(
@@ -630,12 +879,16 @@ export function ExpensesScreen() {
         "This category is not part of the active income allocation plan.";
     }
 
-    if (allocation && parsedAmount) {
+    // Category limits are monthly: compare against spending in the draft's own
+    // month, not lifetime totals or whichever month is being viewed.
+    if (allocation && parsedAmount && !nextErrors.spentDate) {
+      const draftMonth = toMonthKey(trimmedSpentDate);
       const currentSpent = expenses
         .filter(
           (expense) =>
             expense.category === draft.category &&
-            expense.id !== expenseIdToIgnore
+            expense.id !== expenseIdToIgnore &&
+            toMonthKey(expense.spentDate) === draftMonth
         )
         .reduce((sum, expense) => sum + expense.amount, 0);
 
@@ -643,7 +896,8 @@ export function ExpensesScreen() {
         nextErrors.amount = getBudgetErrorMessage(
           allocation,
           parsedAmount,
-          currentSpent
+          currentSpent,
+          draftMonth
         );
       }
     }
@@ -675,6 +929,7 @@ export function ExpensesScreen() {
 
     const { parsedAmount, nextErrors } = validateExpenseDraft({
       draft: newDraft,
+      allowPastMonths: false,
     });
 
     setDraftErrors(nextErrors);
@@ -702,6 +957,8 @@ export function ExpensesScreen() {
       const response = await expenseService.createExpense(payload, accessToken);
 
       setExpenses((current) => sortExpenses([response.expense, ...current]));
+      setSelectedMonth(toMonthKey(response.expense.spentDate));
+      setPage(1);
       resetComposer();
     } catch (error) {
       setErrorNotice(normalizeApiError(error));
@@ -731,6 +988,7 @@ export function ExpensesScreen() {
     const { parsedAmount, nextErrors } = validateExpenseDraft({
       draft: editDraft,
       expenseIdToIgnore: editingExpenseId,
+      allowPastMonths: true,
     });
 
     setEditErrors(nextErrors);
@@ -768,6 +1026,13 @@ export function ExpensesScreen() {
           )
         )
       );
+
+      // Keep the edited row visible if its date moved it to another month.
+      const savedMonth = toMonthKey(response.expense.spentDate);
+      if (savedMonth !== selectedMonth) {
+        setSelectedMonth(savedMonth);
+        setPage(1);
+      }
       resetEditState();
     } catch (error) {
       setErrorNotice(normalizeApiError(error));
@@ -821,7 +1086,7 @@ export function ExpensesScreen() {
     return (
       <div className="space-y-8">
         <SectionLabel
-          eyebrow="Expenses"
+          eyebrow="Dashboard"
           title="Track spending once your income plan is in place"
           description="Expenses are budget-aware in this workspace, so the screen needs your active income allocations before it can validate category limits."
         />
@@ -858,6 +1123,8 @@ export function ExpensesScreen() {
     );
   }
 
+  const incomeLeft = currentIncome.totalIncome - totalSpent;
+
   return (
     <>
       <ErrorPopup notice={errorNotice} onClose={() => setErrorNotice(null)} />
@@ -869,12 +1136,34 @@ export function ExpensesScreen() {
           void handleConfirmDelete();
         }}
       />
+      <ExpenseFormModal
+        mode={isEditMode ? "edit" : "add"}
+        open={isAdding || isEditMode}
+        draft={isEditMode ? editDraft : newDraft}
+        errors={isEditMode ? editErrors : draftErrors}
+        busy={
+          isEditMode
+            ? pendingAction === editingExpenseId
+            : pendingAction === "create"
+        }
+        categories={allowedCategories}
+        minDate={isEditMode ? undefined : `${currentMonthKey}-01`}
+        maxDate={isEditMode ? undefined : getTodayDateInputValue()}
+        onChange={(patch) => {
+          const setDraft = isEditMode ? setEditDraft : setNewDraft;
+          setDraft((current) => ({ ...current, ...patch }));
+        }}
+        onSubmit={() => {
+          void (isEditMode ? handleSaveEdit() : handleAddExpense());
+        }}
+        onClose={isEditMode ? resetEditState : resetComposer}
+      />
 
       <div className="space-y-8">
         <SectionLabel
-          eyebrow="Expenses"
-          title="Track category spending against your active budget"
-          description="Choose an allocated category, add a clear description, and log the amount. The screen keeps each category within its income limit."
+          eyebrow="Dashboard"
+          title="Your budget and spending at a glance"
+          description="See how much of your income is left, how each category is tracking against its budget, and log new expenses as they happen."
         />
 
         {pageError ? (
@@ -895,25 +1184,41 @@ export function ExpensesScreen() {
         ) : null}
 
         <section className="rounded-[30px] border border-border bg-surface p-6 shadow-[0_24px_70px_rgba(13,20,33,0.08)] sm:p-8">
-          <div className="flex flex-col gap-4 border-b border-border/70 pb-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-2">
-              <p className="text-sm font-semibold uppercase tracking-[0.08em] text-brand-strong">
-                Active budget
-              </p>
-              <h2 className="text-2xl font-semibold text-foreground">
-                Category usage at a glance
-              </h2>
-              <p className="max-w-2xl text-sm leading-6 text-copy-muted">
-                Each category below shows how much of the allocation has already
-                been used by expenses and how much room is left.
-              </p>
+          <div className="space-y-6 border-b border-border/70 pb-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold uppercase tracking-[0.08em] text-brand-strong">
+                  Monthly budget
+                </p>
+                <h2 className="text-2xl font-semibold text-foreground">
+                  Where your money is going
+                </h2>
+                <p className="max-w-2xl text-sm leading-6 text-copy-muted">
+                  Spending for the selected month against your monthly category
+                  limits.
+                </p>
+              </div>
+
+              <ListboxSelect
+                ariaLabel="Month"
+                value={selectedMonth}
+                options={monthOptions}
+                onChange={(nextMonth) => {
+                  setSelectedMonth(nextMonth);
+                  setPage(1);
+                }}
+                className="w-full shrink-0 sm:w-52"
+              />
             </div>
 
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-[22px] border border-border bg-background px-4 py-4">
-                <p className="text-sm font-medium text-copy-muted">Budgeted</p>
+                <p className="text-sm font-medium text-copy-muted">Income</p>
                 <p className="mt-2 text-xl font-semibold text-foreground">
-                  {formatCurrency(currentIncome.totalAllocated)}
+                  {formatCurrency(currentIncome.totalIncome)}
+                </p>
+                <p className="mt-1 text-xs text-copy-muted">
+                  {formatCurrency(currentIncome.totalAllocated)} budgeted
                 </p>
               </div>
               <div className="rounded-[22px] border border-border bg-background px-4 py-4">
@@ -921,11 +1226,23 @@ export function ExpensesScreen() {
                 <p className="mt-2 text-xl font-semibold text-foreground">
                   {formatCurrency(totalSpent)}
                 </p>
+                <p className="mt-1 text-xs text-copy-muted">
+                  in {selectedMonthLabel} · of{" "}
+                  {formatCurrency(currentIncome.totalAllocated)} budgeted
+                </p>
               </div>
               <div className="rounded-[22px] border border-border bg-background px-4 py-4">
-                <p className="text-sm font-medium text-copy-muted">Remaining</p>
-                <p className="mt-2 text-xl font-semibold text-brand-strong">
-                  {formatCurrency(currentIncome.totalAllocated - totalSpent)}
+                <p className="text-sm font-medium text-copy-muted">Left</p>
+                <p
+                  className={cn(
+                    "mt-2 text-xl font-semibold",
+                    incomeLeft < 0 ? "text-rose-600" : "text-brand-strong"
+                  )}
+                >
+                  {formatCurrency(incomeLeft)}
+                </p>
+                <p className="mt-1 text-xs text-copy-muted">
+                  after {selectedMonthLabel} spending
                 </p>
               </div>
             </div>
@@ -958,7 +1275,9 @@ export function ExpensesScreen() {
                           : "bg-brand/10 text-brand-strong"
                       )}
                     >
-                      {formatCurrency(status.remaining)} left
+                      {status.remaining < 0
+                        ? `Over by ${formatCurrency(Math.abs(status.remaining))}`
+                        : `${formatCurrency(status.remaining)} left`}
                     </span>
                   </div>
 
@@ -984,439 +1303,146 @@ export function ExpensesScreen() {
           </div>
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <div className="rounded-[30px] border border-border bg-surface p-6 shadow-[0_24px_70px_rgba(13,20,33,0.08)] sm:p-8">
-            <div className="flex flex-col gap-3 border-b border-border/70 pb-6">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.08em] text-brand-strong">
-                    Add expense
-                  </p>
-                  <h2 className="mt-2 text-2xl font-semibold text-foreground">
-                    Log a new spending entry
-                  </h2>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAdding((current) => !current);
-                    setDraftErrors({});
-                    setErrorNotice(null);
-                    resetEditState();
-                    setNewDraft((current) => ({
-                      ...current,
-                      spentDate: current.spentDate || getTodayDateInputValue(),
-                    }));
-                  }}
-                  className="inline-flex h-11 items-center justify-center rounded-2xl border border-border bg-background px-4 text-sm font-medium text-foreground transition hover:border-brand/40 hover:text-brand"
-                >
-                  {isAdding ? "Hide form" : "Add expense"}
-                </button>
-              </div>
-              <p className="text-sm leading-6 text-copy-muted">
-                Only categories from your active income allocations can be used
-                here, so every expense stays grounded in the current budget plan.
+        <section className="rounded-[30px] border border-border bg-surface p-6 shadow-[0_24px_70px_rgba(13,20,33,0.08)] sm:p-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-semibold text-foreground">
+                Expenses
+              </h2>
+              <p className="mt-1 text-sm text-copy-muted">
+                {selectedMonthLabel}
+                {" · "}
+                {monthExpenses.length}{" "}
+                {monthExpenses.length === 1 ? "entry" : "entries"}
+                {" · "}
+                {formatCurrency(totalSpent)} spent
               </p>
             </div>
 
-            {isAdding ? (
-              <div className="mt-6 space-y-5">
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-foreground">
-                    Spent date
-                  </span>
-                  <input
-                    type="date"
-                    value={newDraft.spentDate}
-                    onChange={(event) =>
-                      setNewDraft((current) => ({
-                        ...current,
-                        spentDate: event.target.value,
-                      }))
-                    }
-                    className={cn(
-                      "h-12 w-full rounded-2xl border bg-background px-4 text-sm text-foreground outline-none transition",
-                      draftErrors.spentDate
-                        ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
-                        : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
-                    )}
-                  />
-                  {draftErrors.spentDate ? (
-                    <p className="text-sm text-rose-600">{draftErrors.spentDate}</p>
-                  ) : null}
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-foreground">
-                    Category
-                  </span>
-                  <select
-                    value={newDraft.category}
-                    onChange={(event) =>
-                      setNewDraft((current) => ({
-                        ...current,
-                        category: event.target.value,
-                      }))
-                    }
-                    className={cn(
-                      "h-12 w-full rounded-2xl border bg-background px-4 text-sm text-foreground outline-none transition",
-                      draftErrors.category
-                        ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
-                        : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
-                    )}
-                  >
-                    <option value="">Select category</option>
-                    {allowedCategories.map((category) => (
-                      <option key={category.code} value={category.code}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                  {draftErrors.category ? (
-                    <p className="text-sm text-rose-600">{draftErrors.category}</p>
-                  ) : null}
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-foreground">
-                    Description
-                  </span>
-                  <textarea
-                    rows={4}
-                    value={newDraft.description}
-                    onChange={(event) =>
-                      setNewDraft((current) => ({
-                        ...current,
-                        description: event.target.value,
-                      }))
-                    }
-                    placeholder="Example: Grocery refill for the week"
-                    className={cn(
-                      "w-full rounded-2xl border bg-background px-4 py-3 text-sm text-foreground outline-none transition resize-none",
-                      draftErrors.description
-                        ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
-                        : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
-                    )}
-                  />
-                  {draftErrors.description ? (
-                    <p className="text-sm text-rose-600">
-                      {draftErrors.description}
-                    </p>
-                  ) : null}
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-foreground">
-                    Amount
-                  </span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="0.01"
-                    value={newDraft.amount}
-                    onChange={(event) =>
-                      setNewDraft((current) => ({
-                        ...current,
-                        amount: event.target.value,
-                      }))
-                    }
-                    placeholder="Enter amount"
-                    className={cn(
-                      "h-12 w-full rounded-2xl border bg-background px-4 text-sm text-foreground outline-none transition",
-                      draftErrors.amount
-                        ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
-                        : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
-                    )}
-                  />
-                  {draftErrors.amount ? (
-                    <p className="text-sm text-rose-600">{draftErrors.amount}</p>
-                  ) : null}
-                </label>
-
-                <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={resetComposer}
-                    disabled={pendingAction === "create"}
-                    className="inline-flex h-11 items-center justify-center rounded-2xl border border-border bg-background px-4 text-sm font-medium text-foreground transition hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void handleAddExpense();
-                    }}
-                    disabled={pendingAction === "create"}
-                    className="inline-flex h-11 items-center justify-center rounded-2xl bg-brand px-4 text-sm font-semibold text-white shadow-[0_16px_36px_rgba(0,120,97,0.24)] transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {pendingAction === "create" ? "Saving..." : "Save expense"}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-6 rounded-[24px] border border-dashed border-border bg-background px-5 py-6">
-                <p className="text-sm leading-6 text-copy-muted">
-                  Open the composer when you are ready to add a new expense entry.
-                  The form will show the remaining budget guardrails as soon as you
-                  choose a category.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-[30px] border border-border bg-surface p-6 shadow-[0_24px_70px_rgba(13,20,33,0.08)] sm:p-8">
-            <div className="flex flex-col gap-3 border-b border-border/70 pb-6 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.08em] text-brand-strong">
-                  Expense list
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold text-foreground">
-                  Current spending entries
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-copy-muted">
-                  Edit details inline or delete an entry to free that amount from
-                  its category budget immediately.
-                </p>
-              </div>
-
+            <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => {
                   void handleRefresh();
                 }}
                 disabled={isRefreshing || pendingAction !== null}
-                className="inline-flex h-11 items-center justify-center rounded-2xl border border-border bg-background px-4 text-sm font-medium text-copy-muted transition hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex h-11 flex-1 items-center justify-center rounded-2xl border border-border bg-background px-4 text-sm font-medium text-copy-muted transition hover:border-brand/40 hover:text-brand disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
               >
                 {isRefreshing ? "Refreshing..." : "Refresh"}
               </button>
+              <button
+                type="button"
+                onClick={openAddModal}
+                disabled={!isViewingCurrentMonth}
+                title={
+                  isViewingCurrentMonth
+                    ? undefined
+                    : `Switch to ${formatMonthLabel(currentMonthKey)} to add expenses`
+                }
+                className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-brand px-4 text-sm font-semibold text-white shadow-[0_16px_36px_rgba(0,120,97,0.24)] transition hover:bg-brand-strong disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none disabled:hover:bg-brand sm:flex-none"
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  aria-hidden="true"
+                >
+                  <path d="M10 4.5v11M4.5 10h11" strokeLinecap="round" />
+                </svg>
+                Add expense
+              </button>
             </div>
-
-            {expenses.length === 0 ? (
-              <div className="mt-8 flex flex-col items-center justify-center rounded-[28px] border border-dashed border-border bg-background px-6 py-14 text-center">
-                <div className="max-w-lg space-y-4">
-                  <h3 className="text-2xl font-semibold text-foreground">
-                    No expenses yet for this budget cycle
-                  </h3>
-                  <p className="text-base leading-7 text-copy-muted">
-                    “What gets tracked gets improved.” Add your first expense entry
-                    and this list will begin showing how each category budget moves
-                    over time.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAdding(true);
-                      setDraftErrors({});
-                      setNewDraft((current) => ({
-                        ...current,
-                        spentDate: current.spentDate || getTodayDateInputValue(),
-                      }));
-                    }}
-                    className="inline-flex h-12 items-center justify-center rounded-2xl bg-brand px-5 text-sm font-semibold text-white shadow-[0_16px_36px_rgba(0,120,97,0.24)] transition hover:bg-brand-strong"
-                  >
-                    Add expense
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-6 space-y-4">
-                {expenses.map((expense) => {
-                  const isEditing = editingExpenseId === expense.id;
-                  const isBusy = pendingAction === expense.id;
-                  const budgetStatus = budgetStatuses.find(
-                    (status) => status.category === expense.category
-                  );
-
-                  return (
-                    <div
-                      key={expense.id}
-                      className="rounded-[24px] border border-border bg-background px-5 py-5"
-                    >
-                      {isEditing ? (
-                        <div className="grid gap-4 lg:grid-cols-[0.9fr_1fr_1.1fr_0.8fr_auto]">
-                          <div className="space-y-2">
-                            <label className="block text-sm font-medium text-foreground">
-                              Spent date
-                            </label>
-                            <input
-                              type="date"
-                              value={editDraft.spentDate}
-                              onChange={(event) =>
-                                setEditDraft((current) => ({
-                                  ...current,
-                                  spentDate: event.target.value,
-                                }))
-                              }
-                              className={cn(
-                                "h-12 w-full rounded-2xl border bg-surface px-4 text-sm text-foreground outline-none transition",
-                                editErrors.spentDate
-                                  ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
-                                  : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
-                              )}
-                            />
-                            {editErrors.spentDate ? (
-                              <p className="text-sm text-rose-600">
-                                {editErrors.spentDate}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="block text-sm font-medium text-foreground">
-                              Category
-                            </label>
-                            <select
-                              value={editDraft.category}
-                              onChange={(event) =>
-                                setEditDraft((current) => ({
-                                  ...current,
-                                  category: event.target.value,
-                                }))
-                              }
-                              className={cn(
-                                "h-12 w-full rounded-2xl border bg-surface px-4 text-sm text-foreground outline-none transition",
-                                editErrors.category
-                                  ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
-                                  : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
-                              )}
-                            >
-                              <option value="">Select category</option>
-                              {allowedCategories.map((category) => (
-                                <option key={category.code} value={category.code}>
-                                  {category.name}
-                                </option>
-                              ))}
-                            </select>
-                            {editErrors.category ? (
-                              <p className="text-sm text-rose-600">
-                                {editErrors.category}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="block text-sm font-medium text-foreground">
-                              Description
-                            </label>
-                            <textarea
-                              rows={3}
-                              value={editDraft.description}
-                              onChange={(event) =>
-                                setEditDraft((current) => ({
-                                  ...current,
-                                  description: event.target.value,
-                                }))
-                              }
-                              className={cn(
-                                "w-full rounded-2xl border bg-surface px-4 py-3 text-sm text-foreground outline-none transition resize-none",
-                                editErrors.description
-                                  ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
-                                  : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
-                              )}
-                            />
-                            {editErrors.description ? (
-                              <p className="text-sm text-rose-600">
-                                {editErrors.description}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="space-y-2">
-                            <label className="block text-sm font-medium text-foreground">
-                              Amount
-                            </label>
-                            <input
-                              type="number"
-                              min="1"
-                              step="0.01"
-                              value={editDraft.amount}
-                              onChange={(event) =>
-                                setEditDraft((current) => ({
-                                  ...current,
-                                  amount: event.target.value,
-                                }))
-                              }
-                              className={cn(
-                                "h-12 w-full rounded-2xl border bg-surface px-4 text-sm text-foreground outline-none transition",
-                                editErrors.amount
-                                  ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
-                                  : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
-                              )}
-                            />
-                            {editErrors.amount ? (
-                              <p className="text-sm text-rose-600">
-                                {editErrors.amount}
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="flex items-start justify-end lg:items-end">
-                            <ActionIcons
-                              editing
-                              busy={isBusy}
-                              onCancel={resetEditState}
-                              onSave={() => {
-                                void handleSaveEdit();
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="grid gap-4 lg:grid-cols-[0.9fr_0.9fr_1.2fr_0.9fr_auto]">
-                          <div>
-                            <p className="text-sm font-semibold uppercase tracking-[0.08em] text-brand-strong">
-                              {expense.categoryName}
-                            </p>
-                            <p className="mt-2 text-sm text-copy-muted">
-                              {budgetStatus
-                                ? `${formatCurrency(budgetStatus.remaining)} left in this category`
-                                : "This category is outside the active allocation plan."}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-sm font-medium text-copy-muted">
-                              Date
-                            </p>
-                            <p className="mt-2 text-base font-medium text-foreground">
-                              {formatDate(expense.spentDate)}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-sm font-medium text-copy-muted">
-                              Description
-                            </p>
-                            <p className="mt-2 text-base leading-7 text-foreground">
-                              {expense.description}
-                            </p>
-                          </div>
-
-                          <div>
-                            <p className="text-sm font-medium text-copy-muted">
-                              Amount
-                            </p>
-                            <p className="mt-2 text-xl font-semibold text-foreground">
-                              {formatCurrency(expense.amount)}
-                            </p>
-                          </div>
-
-                          <div className="flex items-start justify-end lg:items-center">
-                            <ActionIcons
-                              busy={isBusy}
-                              onEdit={() => handleStartEdit(expense)}
-                              onDelete={() => setExpensePendingDelete(expense)}
-                            />
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
+
+          {monthExpenses.length === 0 ? (
+            <div className="mt-6 flex flex-col items-center justify-center rounded-[24px] border border-dashed border-border bg-background px-6 py-14 text-center">
+              <div className="max-w-lg space-y-4">
+                <h3 className="text-xl font-semibold text-foreground">
+                  No expenses in {selectedMonthLabel} yet
+                </h3>
+                <p className="text-sm leading-6 text-copy-muted">
+                  “What gets tracked gets improved.” Add your first expense and
+                  this list will start showing where your budget goes.
+                </p>
+                <button
+                  type="button"
+                  onClick={openAddModal}
+                  disabled={!isViewingCurrentMonth}
+                  className="inline-flex h-11 items-center justify-center rounded-2xl bg-brand px-5 text-sm font-semibold text-white shadow-[0_16px_36px_rgba(0,120,97,0.24)] transition hover:bg-brand-strong"
+                >
+                  Add expense
+                </button>
+              </div>
+            </div>
+          ) : (
+            <ul className="mt-6 divide-y divide-border overflow-hidden rounded-[24px] border border-border bg-background">
+              {pagedExpenses.map((expense) => (
+                <li
+                  key={expense.id}
+                  className="group flex items-center gap-3 px-4 py-3 sm:gap-4 sm:px-5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <p className="truncate font-medium text-foreground">
+                        {expense.description}
+                      </p>
+                      {expense.recurringId ? (
+                        <span
+                          title="Auto-generated from a recurring template. Edit it on the Income page → recurring items."
+                          className="inline-flex shrink-0 items-center rounded-full border border-brand/30 bg-brand/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-strong"
+                        >
+                          Recurring
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-copy-muted">
+                      <span className="font-semibold uppercase tracking-[0.06em] text-brand-strong">
+                        {expense.categoryName}
+                      </span>
+                      <span aria-hidden="true"> · </span>
+                      {formatDate(expense.spentDate)}
+                    </p>
+                  </div>
+
+                  <p className="shrink-0 font-semibold tabular-nums text-foreground">
+                    {formatCurrency(expense.amount)}
+                  </p>
+
+                  <div className="flex w-[4.5rem] shrink-0 justify-end">
+                    {expense.recurringId ? null : (
+                      <div className="transition [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:focus-within:opacity-100">
+                        <ActionIcons
+                          busy={pendingAction === expense.id}
+                          onEdit={() => handleStartEdit(expense)}
+                          onDelete={() => setExpensePendingDelete(expense)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {monthExpenses.length > PAGE_SIZE_OPTIONS[0] ? (
+            <div className="mt-4">
+              <Pagination
+                label="Expense pages"
+                page={currentPage}
+                pageCount={pageCount}
+                pageSize={pageSize}
+                pageSizeOptions={PAGE_SIZE_OPTIONS}
+                totalItems={monthExpenses.length}
+                onPageChange={setPage}
+                onPageSizeChange={(nextSize) => {
+                  setPageSize(nextSize);
+                  setPage(1);
+                }}
+              />
+            </div>
+          ) : null}
         </section>
       </div>
     </>

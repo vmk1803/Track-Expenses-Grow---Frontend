@@ -27,13 +27,13 @@ There is no test runner configured. Don't claim test coverage exists. The projec
 
 - `src/app/` — routes only. Read params, compose layout, mount a feature component. No business logic, no `fetch()`.
 - `src/features/<name>/` — domain code, organized as `components/`, `services/`, `types/`, `schemas/`, optional `state/`. `auth` and `income` are the reference implementations; mirror their shape for new features.
-- `src/components/` — cross-feature shell + providers (e.g. `dashboard-shell`, `protected-route`, `app-providers`, `auth-bootstrapper`).
+- `src/components/` — cross-feature shell, providers and shared UI primitives (e.g. `dashboard-shell`, `protected-route`, `app-providers`, `auth-bootstrapper`, `ui/pagination`). Interactive primitives build on `@headlessui/react` styled with Tailwind.
 - `src/lib/` — `api/http-client.ts`, `store/`, `utils/`. Don't dump feature-specific helpers here.
 - `src/config/env.ts` — Zod-validated env. Every new `NEXT_PUBLIC_*` var must be added here AND in `.env.example`.
 
 ### Routing & auth
 
-- Public entry: `src/app/page.tsx` renders `AuthScreen`, honors `?next=` for post-login redirect, defaults to `/dashboard/overview`.
+- Public entry: `src/app/page.tsx` renders `AuthScreen`, honors `?next=` for post-login redirect, defaults to `/dashboard/expenses` (the dashboard home; `/dashboard` and the old `/dashboard/overview` redirect there).
 - Protected area: `src/app/(app)/dashboard/layout.tsx` wraps every dashboard route in `ProtectedRoute` + `DashboardShell`. Adding a new dashboard page automatically inherits auth — don't re-wrap.
 - `ProtectedRoute` states: `idle`/`bootstrapping`/`submitting` → loader; `anonymous` → redirect to `/?next=<path>`; `authenticated` → render. Preserve this contract.
 
@@ -86,4 +86,4 @@ Theme tokens live in `src/app/globals.css` (`--background`, `--foreground`, `--s
 - Thin route files; logic in features.
 - One `services/` file per feature for REST.
 - Preserve the bootstrap → protected-route → shell flow.
-- Mirror `income`'s structure when scaffolding new domains (e.g. `expenses`, `overview`, `ai-advice` placeholders exist and should follow this pattern when filled in).
+- Mirror `income`'s structure when scaffolding new domains (e.g. `personalization` placeholder exists and should follow this pattern when filled in). Feature-internal pure helpers may live in a `utils/` subdirectory.

@@ -12,7 +12,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const nextPath =
     typeof nextParam === "string" && nextParam.startsWith("/")
       ? nextParam
-      : "/dashboard/overview";
+      : "/dashboard/expenses";
 
   return <AuthScreen nextPath={nextPath} />;
 }
