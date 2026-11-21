@@ -23,6 +23,14 @@ import type {
   IncomeView,
 } from "@/features/income/types/income";
 import { expenseService } from "@/features/expenses/services/expense-service";
+import { SmartAddSection } from "@/features/expenses/smart-add/components/smart-add-section";
+import { fieldClass } from "@/features/expenses/components/field-class";
+import {
+  formatMonthLabel,
+  getCurrentMonthKey,
+  getTodayDateInputValue,
+  toMonthKey,
+} from "@/features/expenses/utils/date";
 import type {
   ExpenseBudgetStatus,
   ExpenseCategory,
@@ -82,36 +90,6 @@ function formatDate(value: string) {
   return displayDateFormatter.format(new Date(value));
 }
 
-const monthLabelFormatter = new Intl.DateTimeFormat("en-IN", {
-  month: "long",
-  year: "numeric",
-});
-
-function padTwo(value: number) {
-  return String(value).padStart(2, "0");
-}
-
-// Local calendar date (not toISOString, which is UTC and can be a day behind).
-function getTodayDateInputValue() {
-  const now = new Date();
-  return `${now.getFullYear()}-${padTwo(now.getMonth() + 1)}-${padTwo(now.getDate())}`;
-}
-
-/** "2026-11-10" → "2026-11" */
-function toMonthKey(dateValue: string) {
-  return dateValue.slice(0, 7);
-}
-
-function getCurrentMonthKey() {
-  return toMonthKey(getTodayDateInputValue());
-}
-
-/** "2026-11" → "November 2026" */
-function formatMonthLabel(monthKey: string) {
-  const [year, month] = monthKey.split("-").map(Number);
-  return monthLabelFormatter.format(new Date(year, month - 1, 1));
-}
-
 function parsePositiveAmount(rawValue: string) {
   const parsed = Number(rawValue);
 
@@ -141,16 +119,6 @@ function normalizeApiError(error: unknown) {
     title: "Unable to save expense",
     message: "Something went wrong while talking to the backend.",
   };
-}
-
-function fieldClass(hasError: boolean, sizing = "h-12") {
-  return cn(
-    "w-full rounded-2xl border bg-background px-4 text-sm text-foreground outline-none transition",
-    sizing,
-    hasError
-      ? "border-rose-300 focus:border-rose-400 focus:ring-2 focus:ring-rose-200"
-      : "border-border focus:border-brand focus:ring-2 focus:ring-brand/20"
-  );
 }
 
 function SectionLabel({
@@ -922,6 +890,14 @@ export function ExpensesScreen() {
     }
   };
 
+  // Smart Add saves the expense itself; the screen only adds it to the list,
+  // mirroring the success path of handleAddExpense.
+  const handleSmartAddCreated = (expense: ExpenseView) => {
+    setExpenses((current) => sortExpenses([expense, ...current]));
+    setSelectedMonth(toMonthKey(expense.spentDate));
+    setPage(1);
+  };
+
   const handleAddExpense = async () => {
     if (!accessToken || !currentIncome) {
       return;
@@ -1182,6 +1158,16 @@ export function ExpensesScreen() {
             </div>
           </div>
         ) : null}
+
+        <SmartAddSection
+          income={currentIncome}
+          allowedCategories={allowedCategories}
+          expenses={expenses}
+          disabled={!isViewingCurrentMonth}
+          disabledReason={`Switch to ${formatMonthLabel(currentMonthKey)} to add expenses`}
+          onExpenseCreated={handleSmartAddCreated}
+          onSaveError={(error) => setErrorNotice(normalizeApiError(error))}
+        />
 
         <section className="rounded-[30px] border border-border bg-surface p-6 shadow-[0_24px_70px_rgba(13,20,33,0.08)] sm:p-8">
           <div className="space-y-6 border-b border-border/70 pb-6">

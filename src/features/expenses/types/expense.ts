@@ -1,5 +1,8 @@
 import type { IncomeCategoryCode } from "@/features/income/types/income";
 
+/** How an expense was entered through Smart Add. */
+export type ExpenseInputSource = "voice" | "text";
+
 export type ExpenseCategory = {
   code: IncomeCategoryCode;
   name: string;
@@ -10,6 +13,9 @@ export type ExpensePayload = {
   description: string;
   amount: number;
   spentDate: string;
+  // Create only (Smart Add). The API requires both or neither.
+  inputText?: string;
+  inputSource?: ExpenseInputSource;
 };
 
 export type ExpenseView = {
@@ -21,6 +27,8 @@ export type ExpenseView = {
   amount: number;
   spentDate: string;
   recurringId: string | null;
+  inputText: string | null;
+  inputSource: ExpenseInputSource | null;
   createdAt: string;
   updatedAt: string;
 };
