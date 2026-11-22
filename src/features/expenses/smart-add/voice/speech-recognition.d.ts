@@ -5,6 +5,8 @@ export {};
 
 declare global {
   interface SpeechRecognitionEvent extends Event {
+    /** In continuous mode `results` grows; new results start at this index. */
+    readonly resultIndex: number;
     readonly results: SpeechRecognitionResultList;
   }
 
@@ -21,6 +23,7 @@ declare global {
     onresult: ((event: SpeechRecognitionEvent) => void) | null;
     onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
     onend: (() => void) | null;
+    onspeechstart: (() => void) | null;
     start(): void;
     stop(): void;
     abort(): void;

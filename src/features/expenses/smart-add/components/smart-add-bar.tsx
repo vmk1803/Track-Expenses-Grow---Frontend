@@ -15,19 +15,23 @@ type SmartAddBarProps = {
 
 export function SmartAddBar({ disabled, disabledReason, busy, onSubmit }: SmartAddBarProps) {
   const [text, setText] = useState("");
+  // True once any of the current text came from the mic; decides the submitted source.
+  const [usedVoice, setUsedVoice] = useState(false);
   const { isSupported, status, start, stop } = useSpeechRecognition({
-    onResult: (spokenText) => {
-      // Shown in the bar after listening, editable like typed text.
-      setText(spokenText);
-
-      if (disabled || busy) {
-        return; // same guards as Enter
-      }
-
-      onSubmit({ text: spokenText, source: "voice" });
+    // Each phrase (one per pause) is appended; the user submits with Enter.
+    onResult: (phrase) => {
+      setText((current) => (current.trim() ? `${current.trim()} ${phrase}` : phrase));
+      setUsedVoice(true);
     },
   });
   const listening = status === "listening";
+
+  const handleChange = (value: string) => {
+    setText(value);
+    if (!value.trim()) {
+      setUsedVoice(false); // cleared by hand: start over as typed
+    }
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -37,7 +41,7 @@ export function SmartAddBar({ disabled, disabledReason, busy, onSubmit }: SmartA
       return;
     }
 
-    onSubmit({ text: trimmed, source: "text" });
+    onSubmit({ text: trimmed, source: usedVoice ? "voice" : "text" });
   };
 
   return (
@@ -49,9 +53,9 @@ export function SmartAddBar({ disabled, disabledReason, busy, onSubmit }: SmartA
         <input
           id="smart-add-input"
           type="text"
-          // No live transcript: the field stays empty while listening.
-          value={listening ? "" : text}
-          onChange={(event) => setText(event.target.value)}
+          // Spoken phrases appear here after each pause (no word-by-word transcript).
+          value={text}
+          onChange={(event) => handleChange(event.target.value)}
           disabled={disabled}
           readOnly={busy || listening}
           title={disabled ? disabledReason : undefined}
@@ -102,7 +106,11 @@ export function SmartAddBar({ disabled, disabledReason, busy, onSubmit }: SmartA
 
       {/* Always rendered so screen readers announce the change; min-h keeps the layout steady. */}
       <p role="status" aria-live="polite" className="mt-2 min-h-5 text-sm text-brand-strong">
-        {busy ? "Enhancing with AI…" : ""}
+        {busy
+          ? "Enhancing with AI…"
+          : listening
+            ? "Listening… pause anytime, tap stop when done."
+            : ""}
       </p>
     </form>
   );
